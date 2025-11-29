@@ -1,74 +1,140 @@
 import React, { useState } from 'react';
 import { useKeycloak } from '@react-keycloak/web';
 
+type ReportItem = {
+  day: string;
+  eventsCount: number;
+  avgResponseMs: number;
+  p95ResponseMs: number;
+  errorsCount: number;
+};
+
+type UserReportDto = {
+  userId: string;
+  from: string;
+  to: string;
+  items: ReportItem[];
+};
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
 const ReportPage: React.FC = () => {
   const { keycloak, initialized } = useKeycloak();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [report, setReport] = useState<UserReportDto | null>(null);
 
   const downloadReport = async () => {
-    if (!keycloak?.token) {
-      setError('Not authenticated');
+    if (!initialized) {
+      setError('Keycloak is not initialized yet');
       return;
     }
 
+    if (!keycloak?.token) {
+      setError('Пользователь не авторизован');
+      return;
+    }
+
+    setError(null);
+    setLoading(true);
+
+    const to = new Date();
+    const from = new Date();
+    from.setDate(to.getDate() - 7);
+
+    const toStr = to.toISOString().slice(0, 10);
+    const fromStr = from.toISOString().slice(0, 10);
+
     try {
-      setLoading(true);
-      setError(null);
+      const response = await fetch(
+          `${API_URL}/reports?from_date=${encodeURIComponent(fromStr)}&to_date=${encodeURIComponent(toStr)}`,
+          {
+            headers: {
+              Authorization: `Bearer ${keycloak.token}`,
+            },
+          },
+      );
 
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/reports`, {
-        headers: {
-          'Authorization': `Bearer ${keycloak.token}`
-        }
-      });
+      if (response.status === 401) {
+        setError('Сессия истекла или пользователь не авторизован');
+        setLoading(false);
+        return;
+      }
 
-      
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      if (!response.ok) {
+        setError(`Ошибка при получении отчёта: ${response.status}`);
+        setLoading(false);
+        return;
+      }
+
+      const data: UserReportDto = await response.json();
+      setReport(data);
+    } catch (e) {
+      console.error(e);
+      setError('Сетевая ошибка при запросе отчёта');
     } finally {
       setLoading(false);
     }
   };
 
-  if (!initialized) {
-    return <div>Loading...</div>;
-  }
-
-  if (!keycloak.authenticated) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
-        <button
-          onClick={() => keycloak.login()}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          Login
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
-      <div className="p-8 bg-white rounded-lg shadow-md">
-        <h1 className="text-2xl font-bold mb-6">Usage Reports</h1>
-        
-        <button
-          onClick={downloadReport}
-          disabled={loading}
-          className={`px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 ${
-            loading ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
-        >
-          {loading ? 'Generating Report...' : 'Download Report'}
-        </button>
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="bg-white shadow-md rounded p-8 max-w-3xl w-full">
+          <h1 className="text-2xl font-bold mb-4">Отчёт по работе протеза</h1>
 
-        {error && (
-          <div className="mt-4 p-4 bg-red-100 text-red-700 rounded">
-            {error}
-          </div>
-        )}
+          <p className="mb-4 text-gray-700">
+            Нажмите кнопку ниже, чтобы получить отчёт по своему протезу за последние 7 дней.
+          </p>
+
+          <button
+              onClick={downloadReport}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
+          >
+            {loading ? 'Генерируем отчёт...' : 'Получить отчёт'}
+          </button>
+
+          {error && (
+              <div className="mt-4 p-4 bg-red-100 text-red-700 rounded">
+                {error}
+              </div>
+          )}
+
+          {report && (
+              <div className="mt-6">
+                <h2 className="text-xl font-semibold mb-2">
+                  Отчёт по пользователю {report.userId} ({report.from} — {report.to})
+                </h2>
+                {report.items.length === 0 ? (
+                    <p className="text-gray-600">За выбранный период данных нет.</p>
+                ) : (
+                    <table className="min-w-full border mt-2">
+                      <thead>
+                      <tr className="bg-gray-200">
+                        <th className="border px-2 py-1">День</th>
+                        <th className="border px-2 py-1">Событий</th>
+                        <th className="border px-2 py-1">Сред. реакция, мс</th>
+                        <th className="border px-2 py-1">P95, мс</th>
+                        <th className="border px-2 py-1">Ошибки</th>
+                      </tr>
+                      </thead>
+                      <tbody>
+                      {report.items.map((item) => (
+                          <tr key={item.day}>
+                            <td className="border px-2 py-1">{item.day}</td>
+                            <td className="border px-2 py-1 text-right">{item.eventsCount}</td>
+                            <td className="border px-2 py-1 text-right">{item.avgResponseMs.toFixed(1)}</td>
+                            <td className="border px-2 py-1 text-right">{item.p95ResponseMs.toFixed(1)}</td>
+                            <td className="border px-2 py-1 text-right">{item.errorsCount}</td>
+                          </tr>
+                      ))}
+                      </tbody>
+                    </table>
+                )}
+              </div>
+          )}
+        </div>
       </div>
-    </div>
   );
 };
 
