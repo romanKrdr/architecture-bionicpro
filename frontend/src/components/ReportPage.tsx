@@ -19,19 +19,16 @@ type UserReportDto = {
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 const ReportPage: React.FC = () => {
-  const { keycloak, initialized } = useKeycloak();
+  const { keycloak } = useKeycloak();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<UserReportDto | null>(null);
 
-  const downloadReport = async () => {
-    if (!initialized) {
-      setError('Keycloak is not initialized yet');
-      return;
-    }
+  const isAuthenticated = !!keycloak?.token;
 
-    if (!keycloak?.token) {
-      setError('Пользователь не авторизован');
+  const downloadReport = async () => {
+    if (!isAuthenticated) {
+      // Кнопка отключена, сюда обычно не попадаем
       return;
     }
 
@@ -47,7 +44,9 @@ const ReportPage: React.FC = () => {
 
     try {
       const response = await fetch(
-          `${API_URL}/reports?from_date=${encodeURIComponent(fromStr)}&to_date=${encodeURIComponent(toStr)}`,
+          `${API_URL}/reports?from_date=${encodeURIComponent(
+              fromStr,
+          )}&to_date=${encodeURIComponent(toStr)}`,
           {
             headers: {
               Authorization: `Bearer ${keycloak.token}`,
@@ -56,7 +55,7 @@ const ReportPage: React.FC = () => {
       );
 
       if (response.status === 401) {
-        setError('Сессия истекла или пользователь не авторизован');
+        setError('Сессия истекла или пользователь не авторизован.');
         setLoading(false);
         return;
       }
@@ -78,7 +77,7 @@ const ReportPage: React.FC = () => {
   };
 
   return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <div className="flex items-center justify-center">
         <div className="bg-white shadow-md rounded p-8 max-w-3xl w-full">
           <h1 className="text-2xl font-bold mb-4">Отчёт по работе протеза</h1>
 
@@ -86,18 +85,23 @@ const ReportPage: React.FC = () => {
             Нажмите кнопку ниже, чтобы получить отчёт по своему протезу за последние 7 дней.
           </p>
 
+          {!isAuthenticated && (
+              <p className="mb-4 text-gray-600">
+                Для получения отчёта сначала войдите через кнопку <b>«Войти»</b> в верхней части
+                приложения.
+              </p>
+          )}
+
           <button
               onClick={downloadReport}
-              disabled={loading}
+              disabled={!isAuthenticated || loading}
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
           >
             {loading ? 'Генерируем отчёт...' : 'Получить отчёт'}
           </button>
 
           {error && (
-              <div className="mt-4 p-4 bg-red-100 text-red-700 rounded">
-                {error}
-              </div>
+              <div className="mt-4 p-4 bg-red-100 text-red-700 rounded">{error}</div>
           )}
 
           {report && (
@@ -123,8 +127,12 @@ const ReportPage: React.FC = () => {
                           <tr key={item.day}>
                             <td className="border px-2 py-1">{item.day}</td>
                             <td className="border px-2 py-1 text-right">{item.eventsCount}</td>
-                            <td className="border px-2 py-1 text-right">{item.avgResponseMs.toFixed(1)}</td>
-                            <td className="border px-2 py-1 text-right">{item.p95ResponseMs.toFixed(1)}</td>
+                            <td className="border px-2 py-1 text-right">
+                              {item.avgResponseMs.toFixed(1)}
+                            </td>
+                            <td className="border px-2 py-1 text-right">
+                              {item.p95ResponseMs.toFixed(1)}
+                            </td>
                             <td className="border px-2 py-1 text-right">{item.errorsCount}</td>
                           </tr>
                       ))}

@@ -261,54 +261,75 @@
 
 ## Запуск проекта
 
-### Предварительные требования
+### 1. Запуск всех сервисов одной командой
 
-- Docker + docker-compose
-- Свободные порты:
-    - 3000 — frontend
-    - 8000 — reports-backend
-    - 8080 — Keycloak
-    - 8081 — Airflow Web UI
-    - 8123/9000 — ClickHouse
-
-### 1. Предварительная инициализация базы Airflow
-
-Один раз (после сборки проекта):
+Из корня репозитория:
 
 ```bash
 cd architecture-bionicpro-main
-
-# Поднимаем БД Airflow
-docker-compose up -d airflow_db
-
-# Инициализируем схему Airflow (создаются таблицы, включая лог)
-docker-compose run --rm airflow-webserver airflow db init
+COMPOSE_HTTP_TIMEOUT=600 docker compose up --build
 ```
 
-После успешной инициализации можно остановить временные контейнеры (при необходимости), но это не обязательно.
+Команда поднимет:
 
-### 2. Обычный запуск всего стэка
+* `keycloak_db` — Postgres для Keycloak
+* `keycloak` — IdP (SSO), импортирует `realm-export.json`
+* `frontend` — React SPA
+* `clickhouse` — OLAP БД
+* `reports-backend` — сервис отчётов (FastAPI)
+* `airflow_db` — Postgres для Airflow
+* `airflow-init` — одноразовая инициализация БД Airflow и пользователя `admin/admin`
+* `airflow-webserver` — UI Airflow
+* `airflow-scheduler` — планировщик DAG’а `bionicpro_reports_etl`
 
-```bash
-cd architecture-bionicpro-main
-COMPOSE_HTTP_TIMEOUT=600 docker-compose up --build
-```
+### 2. Проверка работы сервисов
 
-Запустятся:
+После успешного запуска:
 
-- Keycloak + Postgres
-- Frontend
-- ClickHouse
-- Сервис отчётов (FastAPI)
-- Airflow DB
-- Airflow webserver + scheduler
+1. **Сервис отчётов (health-check)**
 
-### 3. Проверка
+   ```text
+   http://localhost:8000/health
+   ```
 
-- Frontend: `http://localhost:3000`
-- Keycloak admin: `http://localhost:8080/admin/master/console/`
-- Reports backend health: `http://localhost:8000/health`
-- Airflow UI: `http://localhost:8081`
-- ClickHouse HTTP: `http://localhost:8123`
+   Ответ:
+
+   ```json
+   { "status": "ok" }
+   ```
+
+2. **Keycloak (админка)**
+
+   ```text
+   http://localhost:8080/admin/master/console/
+   ```
+
+   Логин: `admin`
+   Пароль: `admin`
+
+3. **Airflow UI**
+
+   ```text
+   http://localhost:8081
+   ```
+
+   Логин: `admin`
+   Пароль: `admin`
+   В списке DAG’ов должен быть `bionicpro_reports_etl` без статуса *Broken*.
+
+4. **Frontend (приложение отчётов)**
+
+   ```text
+   http://localhost:3000
+   ```
+   Поведение:
+    * При первом заходе приложение запросит авторизацию в Keycloak.
+    * Для теста можно использовать пользователя из `realm-export.json`, например:
+        * Логин: `prothetic1`
+        * Пароль: `prothetic123`
+    * После логина:
+        * отобразится кнопка **«Получить отчёт»**;
+        * при нажатии фронтенд вызовет `/reports` на backend с токеном пользователя;
+        * backend вернёт отчёт только по текущему пользователю (либо пустой список, если данных в витрине нет).
 
 ---
