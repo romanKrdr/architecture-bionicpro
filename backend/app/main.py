@@ -39,8 +39,6 @@ def get_current_user(
 ) -> Dict[str, Any]:
     """
     Достаём user_id из JWT access token.
-    В бою нужно проверять подпись по JWKS Keycloak.
-    Для учебного проекта используем get_unverified_claims.
     """
     token = credentials.credentials
     try:
@@ -51,14 +49,17 @@ def get_current_user(
             detail="Invalid token",
         )
 
+    preferred_username = claims.get("preferred_username")
     sub = claims.get("sub")
-    if not sub:
+
+    user_id = preferred_username or sub
+    if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has no subject",
         )
 
-    return {"user_id": sub, "claims": claims}
+    return {"user_id": user_id, "claims": claims}
 
 
 @app.get("/health")
