@@ -1,0 +1,4 @@
+fastapi
+uvicorn[standard]
+clickhouse-driver
+python-jose[cryptography]
